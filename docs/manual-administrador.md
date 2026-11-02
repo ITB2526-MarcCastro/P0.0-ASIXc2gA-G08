@@ -61,10 +61,8 @@ Tota la configuració és al repositori de GitHub, validat des de R-N08 amb una 
 
 ## Problemes que hem tingut
 
-- **`git push` rebutjat amb «read only»**: la deploy key s'havia afegit sense *Allow write access*. Es va esborrar i tornar a afegir amb escriptura.
 - **Accents trencats al carregar el CSV**: el fitxer era UTF-16, es va convertir amb `iconv`.
 - **`dig R-N08` donava també 127.0.1.1**: dnsmasq llegia `/etc/hosts`. Es va solucionar amb `no-hosts`.
-- **La web donava timeout des del client Linux**: el client tenia també Default i Wireguard i dues rutes per defecte. Es va deixar només amb itb18.
 - **La regla del 3306 no funcionava**: s'havia aplicat el tallafocs a W-N08 en lloc de al router. Les regles de filtratge han d'estar sempre a R-N08.
 
 ## Punts de seguretat a millorar
