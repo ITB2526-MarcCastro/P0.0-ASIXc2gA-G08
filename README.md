@@ -17,3 +17,5 @@ i 2 clients (Linux i Windows).
 
 ## Usuari d'accés
 Tots els sistemes tenen l'usuari `bchecker`.
+- [Manual d'usuari](docs/manual-usuari.md)
+- [Manual d'administrador](docs/manual-administrador.md)
