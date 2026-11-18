@@ -22,3 +22,4 @@ Tots els sistemes tenen l'usuari `bchecker`.
 - [Manual d'usuari](docs/manual-usuari.md)
 - [Manual d'administrador](docs/manual-administrador.md)
 - [Riscos laborals](docs/riscos-laborals.md)
+- [Anàlisi de mercat](docs/analisi-mercat.md)
