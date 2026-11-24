@@ -1,0 +1,16 @@
+[Unit]
+Description=G08 - Espera de serveis i joc de proves
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/joc-proves
+ExecStart=/bin/bash /opt/joc-proves/esperar_serveis.sh
+TimeoutStartSec=infinity
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
