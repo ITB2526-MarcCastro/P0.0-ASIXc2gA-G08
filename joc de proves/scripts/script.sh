@@ -10,6 +10,7 @@ REMOTE=0
 FTP_LOGIN=0
 FTP_WRITE=0
 CLIENT_IP=""
+WIN_IP="${G08_WIN_IP:-192.168.20.104}"
 LOG_DIR=""
 NON_INTERACTIVE=0
 # Mateixa identitat SSH que esperar_serveis.sh.
@@ -281,7 +282,6 @@ router_tests() {
   web_test R29 "http://$WEB_IP/"
   ftp_tests R3
   internet_test R41 'Sortida HTTPS a Internet des del router'
-  record R40 AVIS 'Limitacio de les proves del router' 'La politica FORWARD exigeix proves des de W, F i C-LIN; utilitza --remote o --role corresponent'
 }
 
 web_role_tests() {
@@ -318,11 +318,13 @@ db_role_tests() {
   if ! has mysql; then skip_missing B03 'Recompte de registres MySQL' mysql
   else
     cmd='SELECT COUNT(*),COUNT(DISTINCT register_id) FROM equipaments.equipaments;'
-    if [[ -n "${MYSQL_USER:-}" ]]; then
-      output="$(mysql -N -B -u "$MYSQL_USER" -e "$cmd" 2>/dev/null)"; rc=$?
-    else
-      output="$(priv_cmd mysql -N -B -e "$cmd" 2>/dev/null)"; rc=$?
-    fi
+  if [[ -f "$HOME/.mylogin.cnf" ]]; then
+    output="$(mysql --login-path=go8 -N -B -e "$cmd" 2>/dev/null)"; rc=$?
+  elif [[ -n "${MYSQL_USER:-}" ]]; then
+    output="$(mysql -N -B -u "$MYSQL_USER" -e "$cmd" 2>/dev/null)"; rc=$?
+  else
+    output="$(priv_cmd mysql -N -B -e "$cmd" 2>/dev/null)"; rc=$?
+  fi
     if ((rc!=0)); then record B03 OMITIDA 'Recompte de registres MySQL' 'No es pot autenticar via socket; prova amb sudo o MYSQL_USER i MYSQL_PWD'
     else
       read -r total count <<< "$output"
@@ -372,6 +374,235 @@ client_role_tests() {
   else record C30 OK 'Acces directe client -> MySQL' 'TCP 3306 no accessible'; fi
 }
 
+windows_tests() {
+    local ps encoded tmp marker id status title
+    local failed=0
+    local -A seen=()
+
+    ps=$(cat <<'POWERSHELL'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+function Check($id, $title, $test) {
+    try {
+        if (& $test) {
+            Write-Output "WIN_RESULT|$id|OK|$title"
+        } else {
+            Write-Output "WIN_RESULT|$id|KO|$title"
+        }
+    } catch {
+        Write-Output "WIN_RESULT|$id|KO|$title"
+    }
+}
+
+function PingHost($ip) {
+    Test-Connection -ComputerName $ip -Count 1 -Quiet
+}
+
+function DNSCheck($name, $ip) {
+    $result = Resolve-DnsName -Name $name -Type A -DnsOnly
+    return ($result.IPAddress -contains $ip)
+}
+
+function TCPCheck($ip, $port) {
+    $tcp = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $tcp.BeginConnect($ip, $port, $null, $null)
+        if (!$async.AsyncWaitHandle.WaitOne(3000)) {
+            return $false
+        }
+        $tcp.EndConnect($async)
+        return $tcp.Connected
+    } catch {
+        return $false
+    } finally {
+        $tcp.Close()
+    }
+}
+
+function FTPCheck($user, $pass, $anonymous) {
+    $req = [System.Net.FtpWebRequest]::Create(
+        'ftp://192.168.10.11/'
+    )
+    $req.Method = 'NLST'
+    $req.Credentials = New-Object System.Net.NetworkCredential($user, $pass)
+    $req.UsePassive = $true
+    $req.KeepAlive = $false
+    $req.Proxy = $null
+    $req.Timeout = 8000
+    $req.ReadWriteTimeout = 8000
+
+    try {
+        $response = $req.GetResponse()
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+        $null = $reader.ReadToEnd()
+        $reader.Close()
+        $response.Close()
+        return (!$anonymous)
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($response) {
+            $code = [int]$response.StatusCode
+            $response.Close()
+            return ($anonymous -and $code -eq 530)
+        }
+        return $false
+    }
+}
+
+$ftpUser = [Text.Encoding]::UTF8.GetString(
+    [Convert]::FromBase64String([Console]::ReadLine())
+)
+$ftpPass = [Text.Encoding]::UTF8.GetString(
+    [Convert]::FromBase64String([Console]::ReadLine())
+)
+
+$cfg = Get-NetIPConfiguration |
+    Where-Object { $_.IPv4DefaultGateway } |
+    Select-Object -First 1
+
+Check CW01 'IP dins del rang DHCP' {
+    $ip = $cfg.IPv4Address.IPAddress
+    $ip -match '^192\.168\.20\.(\d+)$' -and
+    [int]$Matches[1] -ge 100 -and
+    [int]$Matches[1] -le 200
+}
+
+Check CW02 'Porta enllac correcta' {
+    $cfg.IPv4DefaultGateway.NextHop -eq '192.168.20.1'
+}
+
+Check CW03 'Servidor DNS correcte' {
+    $cfg.DNSServer.ServerAddresses -contains '192.168.20.1'
+}
+
+Check CW04 'DHCP activat' {
+    (Get-NetIPInterface -InterfaceIndex $cfg.InterfaceIndex -AddressFamily IPv4).Dhcp -eq 'Enabled'
+}
+
+Check CW05 'Ping al router' {
+    PingHost '192.168.20.1'
+}
+
+Check CW06 'Ping W-N08' {
+    PingHost '192.168.10.10'
+}
+
+Check CW07 'Ping F-N08' {
+    PingHost '192.168.10.11'
+}
+
+Check CW08 'Ping B-N08' {
+    PingHost '192.168.20.10'
+}
+
+Check CW09 'DNS W-N08' {
+    DNSCheck 'W-N08.n08.local' '192.168.10.10'
+}
+
+Check CW10 'DNS F-N08' {
+    DNSCheck 'F-N08.n08.local' '192.168.10.11'
+}
+
+Check CW11 'DNS B-N08' {
+    DNSCheck 'B-N08.n08.local' '192.168.20.10'
+}
+
+Check CW12 'Acces web Apache PHP' {
+    $script:web = Invoke-WebRequest `
+        -Uri 'http://192.168.10.10/' `
+        -UseBasicParsing -TimeoutSec 10
+
+    $script:web.StatusCode -eq 200
+}
+
+Check CW13 'Comprovacio 1982 equipaments' {
+    $script:web.Content -match '(?<!\d)1[., ]?982(?!\d)'
+}
+
+Check CW14 'FTP anonymous rebutjat' {
+    FTPCheck 'anonymous' 'test@example.com' $true
+}
+
+if ($ftpUser -and $ftpPass) {
+    Check CW15 'FTP autenticacio i llistat passiu' {
+        FTPCheck $ftpUser $ftpPass $false
+    }
+} else {
+    Write-Output 'WIN_RESULT|CW15|OMITIDA|Falten credencials FTP'
+}
+
+Check CW16 'Acces directe MySQL bloquejat' {
+    !(TCPCheck '192.168.20.10' 3306)
+}
+
+Check CW17 'Sortida HTTPS a Internet' {
+    $response = Invoke-WebRequest `
+        -Uri 'https://example.com/' `
+        -UseBasicParsing -TimeoutSec 10
+
+    $response.StatusCode -eq 200
+}
+POWERSHELL
+)
+
+    local loader
+
+    encoded=$(printf '%s' "$ps" |
+        iconv -f UTF-8 -t UTF-16LE |
+        base64 -w0) || return 1
+
+    loader=$(printf '%s' \
+        '$code=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::ReadLine())); & ([ScriptBlock]::Create($code))' |
+        iconv -f UTF-8 -t UTF-16LE |
+        base64 -w0) || return 1
+
+    tmp=$(mktemp) || return 1
+
+    if ! {
+        printf '%s\n' "$encoded"
+        printf '%s' "$FTP_USER" | base64 -w0
+        printf '\n'
+        printf '%s' "$FTP_PASS" | base64 -w0
+        printf '\n'
+    } | timeout 180 ssh -T \
+        -i "$SSH_KEY" \
+        -o IdentitiesOnly=yes \
+        -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=yes \
+        "$SSH_USER@$WIN_IP" \
+        "powershell.exe -NoProfile -NonInteractive -EncodedCommand $loader" \
+        >"$tmp"; then
+        failed=1
+    fi
+
+    while IFS='|' read -r marker id status title; do
+        [[ "$marker" == WIN_RESULT ]] || continue
+        [[ "$id" =~ ^CW(0[1-9]|1[0-7])$ ]] || continue
+        [[ -z "${seen[$id]:-}" ]] || continue
+
+        case "$status" in
+            OK|KO|OMITIDA)
+                seen[$id]=1
+                record "$id" "$status" "[windows] $title" "C-WIN $WIN_IP"
+                [[ "$status" == OK ]] || failed=1
+                ;;
+        esac
+    done < <(tr -d '\r' < "$tmp")
+
+    for id in CW{01..17}; do
+        if [[ -z "${seen[$id]:-}" ]]; then
+            record "$id" KO "[windows] Prova sense resultat" "Revisar SSH o PowerShell"
+            failed=1
+        fi
+    done
+
+    rm -f "$tmp"
+    return "$failed"
+}
+
 remote_run() {
   local remote_role="$1" ip="$2" tmp rc line rrole rid status title detail
   if [[ -z "$SCRIPT_PATH" || ! -f "$SCRIPT_PATH" ]]; then
@@ -385,12 +616,18 @@ remote_run() {
     record "SSH-$remote_role" OMITIDA "Proves remotes $remote_role" "Falta clau SSH o known_hosts: $SSH_KEY / $SSH_KNOWN_HOSTS"
     rm -f "$tmp"; return
   fi
-  ssh -T -i "$SSH_KEY" -o IdentitiesOnly=yes \
-    -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
-    -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes \
-    "$SSH_USER@$ip" env G08_MACHINE=1 bash -s -- --role "$remote_role" --non-interactive --log-dir './logs-g08' \
-    < "$SCRIPT_PATH" > "$tmp" 2>/dev/null
-  rc=$?
+{
+  if [[ "$remote_role" == "client" ]]; then
+    printf 'export FTP_USER=%q\n' "${FTP_USER:-}"
+    printf 'export FTP_PASS=%q\n' "${FTP_PASS:-}"
+  fi
+  cat "$SCRIPT_PATH"
+} | ssh -T -i "$SSH_KEY" -o IdentitiesOnly=yes \
+  -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
+  -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes \
+  "$SSH_USER@$ip" env G08_MACHINE=1 bash -s -- --role "$remote_role" --non-interactive --log-dir './logs-g08' \
+  > "$tmp" 2>/dev/null
+rc=$?
   if ! grep -q '^G08_RESULT|' "$tmp"; then
     record "SSH-$remote_role" OMITIDA "Proves remotes $remote_role" "SSH no interactiu a $ip fallit (codi $rc); executar manualment a la VM"
     rm -f "$tmp"; return
@@ -401,8 +638,8 @@ remote_run() {
     case "$status" in OK|KO|AVIS|OMITIDA) record "$rid" "$status" "[$rrole] $title" "$detail" ;; esac
   done < "$tmp"
   rm -f "$tmp"
+  return "$rc"
 }
-
 if [[ "$ROLE" == auto ]]; then
   if has ip && ip -o -4 addr show 2>/dev/null | grep -Fq "inet $DMZ_GW/24"; then ROLE=router
   elif has ip && ip -o -4 addr show 2>/dev/null | grep -Fq "inet $WEB_IP/24"; then ROLE=web
@@ -425,15 +662,29 @@ printf ' Execucio: %s | %s\n' "$RUN_ID" "$(date '+%F %T')"
 printf '============================================================\n'
 printf '[%s] INICI %s %s\n' "$(date '+%F %T')" "$RUN_ID" "$ROLE" >> "$EXEC_LOG"
 case "$ROLE" in
-  router)
-    router_tests
-    if ((REMOTE==1)); then
-      remote_run web "$WEB_IP"
-      remote_run ftp "$FTP_IP"
-      remote_run db "$DB_IP"
-      [[ -z "$CLIENT_IP" ]] || remote_run client "$CLIENT_IP"
+router)
+  router_tests
+  if ((REMOTE==1)) && [[ -n "$CLIENT_IP" ]]; then
+    remote_ko=$KO
+    remote_avis=$AVIS
+    remote_skip=$SKIP
+    remote_failed=0
+
+    remote_run web "$WEB_IP" || remote_failed=1
+    remote_run ftp "$FTP_IP" || remote_failed=1
+    remote_run db "$DB_IP" || remote_failed=1
+    remote_run client "$CLIENT_IP" || remote_failed=1
+    windows_tests || remote_failed=1
+
+    if ((remote_failed==0 && KO==remote_ko && AVIS==remote_avis && SKIP==remote_skip)); then
+      record R40 OK 'Validacio de proves remotes' 'W-N08, F-N08, B-N08, C-LINUX i C-WIN comprovats correctament'
+    else
+      record R40 AVIS 'Validacio de proves remotes' 'Hi ha errors, avisos o proves remotes omeses'
     fi
-    ;;
+  else
+    record R40 AVIS 'Limitacio de les proves del router' 'Falten les proves remotes o la IP del client'
+  fi
+  ;;
   web) web_role_tests ;;
   ftp) ftp_role_tests ;;
   db) db_role_tests ;;

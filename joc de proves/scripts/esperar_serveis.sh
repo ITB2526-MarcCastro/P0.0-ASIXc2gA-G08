@@ -13,6 +13,8 @@ SSH_KNOWN_HOSTS="${G08_SSH_KNOWN_HOSTS:-/home/isard/.ssh/known_hosts}"
 WEB_IP="192.168.10.10"
 FTP_IP="192.168.10.11"
 DB_IP="192.168.20.10"
+CLIENT_IP="192.168.20.137"
+WIN_IP="192.168.20.104"
 INTERVAL="${G08_WAIT_INTERVAL:-15}"
 LOG_FILE="${G08_WAIT_LOG:-/opt/joc-proves/logs/espera_serveis.log}"
 ONCE=0
@@ -105,6 +107,26 @@ tcp_port() {
   return 1
 }
 
+windows_service() {
+    if timeout 15 ssh -n -T \
+        -i "$SSH_KEY" \
+        -o IdentitiesOnly=yes \
+        -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
+        -o BatchMode=yes \
+        -o ConnectTimeout=5 \
+        -o StrictHostKeyChecking=yes \
+        "$SSH_USER@$WIN_IP" \
+        'powershell.exe -NoProfile -NonInteractive -Command "if ((Get-Service sshd).Status -eq 4 -and (Get-Service sshd).StartType -eq 2) { exit 0 } else { exit 1 }"' \
+        >/dev/null 2>&1; then
+
+        log "OK C-WIN/sshd: automatic i actiu"
+        return 0
+    fi
+
+    log "WAIT C-WIN: SSH encara no disponible"
+    return 1
+}
+
 http_web() {
   local code
   code="$(curl --noproxy '*' -sS --connect-timeout 3 --max-time 8 \
@@ -147,11 +169,14 @@ while :; do
   remote_service W-N08 "$WEB_IP" apache2 || pending=$((pending + 1))
   remote_service F-N08 "$FTP_IP" vsftpd || pending=$((pending + 1))
   remote_service B-N08 "$DB_IP" mysql || pending=$((pending + 1))
-
-  # Verificació addicional: no només enabled/active, sinó servei accessible.
+  remote_service C-LINUX "$CLIENT_IP" ssh || pending=$((pending + 1))
+  windows_service || pending=$((pending + 1))
+# Verificació addicional: no només enabled/active, sinó servei accessible.
   tcp_port W-N08 "$WEB_IP" 80 || pending=$((pending + 1))
   tcp_port F-N08 "$FTP_IP" 21 || pending=$((pending + 1))
   tcp_port B-N08 "$DB_IP" 3306 || pending=$((pending + 1))
+  tcp_port C-LINUX "$CLIENT_IP" 22 || pending=$((pending + 1))
+  tcp_port C-WIN "$WIN_IP" 22 || pending=$((pending + 1))
   http_web || pending=$((pending + 1))
 
   if ((pending == 0)); then
@@ -172,7 +197,8 @@ while :; do
     fi
     log "Iniciant joc de proves: $GAME_SCRIPT --role router --remote --non-interactive"
     export G08_SSH_KEY="$SSH_KEY" G08_SSH_KNOWN_HOSTS="$SSH_KNOWN_HOSTS"
-    exec bash "$GAME_SCRIPT" --role router --remote --non-interactive --ssh-user "$SSH_USER"
+    export G08_WIN_IP="$WIN_IP"
+    exec bash "$GAME_SCRIPT" --role router --remote --non-interactive --ssh-user "$SSH_USER" --client-ip "$CLIENT_IP"
   fi
 
   log "PENDENT: $pending comprovacions. El joc de proves NO s'executarà encara."
