@@ -88,6 +88,8 @@ sudo bash /opt/joc-proves/esperar_serveis.sh --check-once
 
 Un codi de sortida 0 indica que els requisits previs estan preparats; un codi diferent de 0 indica que hi ha alguna comprovació pendent o un error de configuració.
 
+![Comprovació dels serveis](../docs/img/g08-espera-serveis.png)
+
 ### 4.2. Execució de les proves
 
 Quan tots els requisits previs són correctes, el script d'espera executa `script.sh` amb el rol `router`, el mode remot i la IP de C-LINUX. La IP de C-WIN es proporciona mitjançant la variable `G08_WIN_IP`.
@@ -148,3 +150,5 @@ RESULTAT: OK=93 | KO=0 | AVIS=0 | OMITIDES=0
 ```
 
 Per consultar com obtenir i interpretar aquest resultat, vegeu [Resultats](resultats.md).
+
+![Resultat final de les 93 proves](../docs/img/g08-resultat-final.png)

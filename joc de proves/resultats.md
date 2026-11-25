@@ -14,6 +14,8 @@ En l'última execució mostrada durant el projecte, el resum va ser:
 
 Això correspon a una execució concreta de la versió integrada amb Linux i Windows. Si es modifica el codi, les credencials, les regles de xarxa o els serveis, cal repetir la validació.
 
+![Resultat final de les 93 proves](../docs/img/g08-resultat-final.png)
+
 ## 2. Ubicació dels logs
 
 Els logs centralitzats es desen al router R-N08:
@@ -96,6 +98,8 @@ Consultar les proves C30 i R40:
 ```bash
 sudo grep -E ';(C30|R40);' /opt/joc-proves/logs/resultats.csv | tail -n 2
 ```
+
+![Registre CSV de la prova B03](../docs/img/g08-logs.png)
 
 ## 5. Significat dels estats
 

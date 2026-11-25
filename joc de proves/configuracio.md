@@ -122,6 +122,8 @@ ssh isard@192.168.20.104 hostname
 ssh isard@192.168.20.104 'powershell.exe -NoProfile -Command "Get-Service sshd"'
 ```
 
+![Connexió SSH amb Windows](../docs/img/g08-ssh-windows.png)
+
 ## 5. FTP a F-N08
 
 El servei utilitzat és `vsftpd`. La configuració comprovada pel joc de proves inclou:
@@ -190,6 +192,8 @@ mysql --login-path=go8 -N -B -e \
 
 El resultat esperat és `2710 1982`. El fitxer `.mylogin.cnf` queda al directori personal de `isard` a B-N08. El joc de proves remot s'executa com aquest usuari i utilitza el login-path `go8`.
 
+![Comprovació de MySQL](../docs/img/g08-mysql.png)
+
 ## 7. Tallafoc local de B-N08
 
 B-N08 escolta MySQL a TCP 3306. Com que C-LINUX i B-N08 són a la mateixa subxarxa, el trànsit entre ells no passa pel filtratge de forwarding del router. Per això s'aplica el control al mateix B-N08 amb UFW.
@@ -226,6 +230,8 @@ sudo ufw status numbered
 sudo nft list ruleset
 sudo ss -lntp | grep 3306
 ```
+
+![Regles UFW de B-N08](../docs/img/g08-ufw.png)
 
 ## 8. Variables i fitxers que no es publiquen
 

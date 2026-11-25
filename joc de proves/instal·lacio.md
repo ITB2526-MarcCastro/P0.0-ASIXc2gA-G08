@@ -136,6 +136,8 @@ Per seguir el procés en directe:
 sudo journalctl -fu go8-proves.service
 ```
 
+![Arrencada automàtica amb systemd (versió anterior)](../docs/img/g08-arrencada-automatica.png)
+
 ## 7. Actualitzar els scripts instal·lats
 
 Després d'actualitzar els fitxers del repositori, copiar les versions noves a `/opt/joc-proves/` i validar-ne la sintaxi:
